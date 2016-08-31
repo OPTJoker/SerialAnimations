@@ -7,6 +7,7 @@
 //  QQ: 494058733
 //
 
+#define KBlueMilk [UIColor colorWithRed:49/255.f green:189/255.f blue:249/255.f alpha:1]
 typedef void(^animBlock)(void);
 
 #import "ViewController.h"
@@ -31,6 +32,10 @@ typedef void(^animBlock)(void);
     UILabel *showLab;
     
     NSString *content;
+    
+    // 逐字显示文字需要很长时间，来一个标记吧
+    BOOL showLabComplete;
+    
 }
 @end
 
@@ -72,39 +77,121 @@ typedef void(^animBlock)(void);
     animBtn.frame = CGRectMake(ScreenW-30-40, ScreenH-50, 40, 30);
     [animBtn addTarget:self action:@selector(playFlash) forControlEvents:UIControlEventTouchUpInside];
     [self.view addSubview:animBtn];
+    
+    // 切换3种场景的标签
+    NSArray *titles = @[@"group动画",@"异步文字",@"dispatch动画"];
+    for (char i =0; i<3; i++) {
+        UIButton *sceneBtn = [UIButton buttonWithType:UIButtonTypeCustom];
+        sceneBtn.frame = CGRectMake(i*ScreenW/3, 40, (ScreenW-60)/3, 30);
+        [sceneBtn addTarget:self action:@selector(sceneMethod:) forControlEvents:UIControlEventTouchUpInside];
+        sceneBtn.tag = 101+i;
+        sceneBtn.titleLabel.font = [UIFont systemFontOfSize:13];
+        [sceneBtn setTitleColor:[UIColor orangeColor] forState:UIControlStateNormal];
+        [sceneBtn setTitle:titles[i] forState:UIControlStateNormal];
+        [self.view addSubview:sceneBtn];
+    }
+    
+    showLabComplete = YES;
 }
 
+/**  这是3种动画的选择器 **/
+- (void)sceneMethod:(UIButton *)btn{
+    switch (btn.tag-100) {
+        case 1:
+        {
+            // 利用group连播动画
+            if (!showLab.hidden) {
+                showLab.hidden = YES;
+                cube.hidden = NO;
+            }
+            // 更换还原按钮的响应事件为情景1的事件
+            [resetBtn removeTarget:self action:@selector(asyncShowText) forControlEvents:UIControlEventTouchUpInside];
+            [resetBtn addTarget:self action:@selector(resetCube) forControlEvents:UIControlEventTouchUpInside];
+            // 更换动画按钮的响应事件为情景三的事件
+            [animBtn removeTarget:self action:@selector(asyncPlayFlash) forControlEvents:UIControlEventTouchUpInside];
+            [animBtn addTarget:self action:@selector(playFlash) forControlEvents:UIControlEventTouchUpInside];
+        }break;
+        case 2:{
+            // 2.异步显示文字
+            if (!cube.hidden) {
+                cube.hidden = YES;
+                showLab.hidden = NO;
+            }
+            [resetBtn removeTarget:self action:@selector(resetCube) forControlEvents:UIControlEventTouchUpInside];
+            [resetBtn addTarget:self action:@selector(asyncShowText) forControlEvents:UIControlEventTouchUpInside];
+            [self asyncShowText];
+        }break;
+        case 3:{
+            // 3.异步显示文字思想的连播动画
+            if (!showLab.hidden) {
+                showLab.hidden = YES;
+                cube.hidden = NO;
+            }
+            [resetBtn removeTarget:self action:@selector(asyncShowText) forControlEvents:UIControlEventTouchUpInside];
+            [resetBtn addTarget:self action:@selector(resetCube) forControlEvents:UIControlEventTouchUpInside];
+            
+            [animBtn removeTarget:self action:@selector(playFlash) forControlEvents:UIControlEventTouchUpInside];
+            [animBtn addTarget:self action:@selector(asyncPlayFlash) forControlEvents:UIControlEventTouchUpInside];
+        }break;
+            
+        default:
+            break;
+    }
+}
 
 - (void)viewDidLoad {
     [super viewDidLoad];
     // Do any additional setup after loading the view, typically from a nib.
     [self UIConfig];
     
-    /**  这里是3种动画的测试选择 能切仅能打开一种动画的注释 **/
-    // 1.group播放连续动画
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         [self playFlash];
     });
     
+}
+
+
+// 1.基于group实现的连播动画
+- (void)playFlash{
+    if (cube.hidden) {
+        NSLog(@"cube is hidden");
+        return;
+    }
+    [self animateSyncDuration:dur animations:^{
+        [self changeWidth:ScreenW-40];
+    }];
     
-    // 2.异步显示文字
-//    [resetBtn removeTarget:self action:@selector(resetCube) forControlEvents:UIControlEventTouchUpInside];
-//    [resetBtn addTarget:self action:@selector(asyncShowText) forControlEvents:UIControlEventTouchUpInside];
+    [self animateSyncDuration:dur animations:^{
+        [self changeHeight:260];
+    }];
     
-    
-    // 3.异步显示文字思想的连播动画
-//    [animBtn removeTarget:self action:@selector(playFlash) forControlEvents:UIControlEventTouchUpInside];
-//    [animBtn addTarget:self action:@selector(asyncPlayFlash) forControlEvents:UIControlEventTouchUpInside];
+    [self animateSyncDuration:dur animations:^{
+        [self changeCenter:CGPointMake(ScreenW/2.f, 2*ScreenH/5.f)];
+    }];
+}
+
+
+// Packge A Method By The Block For Serial Animations
+- (void)animateSyncDuration:(NSTimeInterval)duration animations:(dispatch_block_t)animations {
+    dispatch_async(self->myQueue, ^{
+        
+        dispatch_group_enter(myGroup);
+        
+        dispatch_async(dispatch_get_main_queue(), ^{
+            // 带弹簧
+            [UIView animateWithDuration:duration delay:0 usingSpringWithDamping:0.8 initialSpringVelocity:1 options:UIViewAnimationOptionCurveEaseInOut animations:animations completion:^(BOOL finished) {
+                dispatch_group_leave(myGroup);
+            }];
+        });
+        
+        dispatch_group_wait(myGroup, DISPATCH_TIME_FOREVER);
+    });
     
 }
 
 
-// 异步显示文字
+// 2.异步显示文字
 - (void)asyncShowText{
-    
-    if (!cube.hidden) {
-        cube.hidden = YES;
-    }
     if (!showLab) {
         content = @"\
 我有过多次这样的奇遇，\n\
@@ -145,30 +232,11 @@ typedef void(^animBlock)(void);
 盲目只能夸大魔鬼的狰狞嘴脸；\n\
 也许我的样子比它们更可怕，\n\
 当我以命相拼，一往无前！  \n\
-\n\
-只要我还有一根完整的龙骨，\n\
-绝不驶进避风的港湾；\n\
-把生命放在征途上， \n\
-让勇敢来决定道路的宽窄、长短。\n\
-\n\
-我完完全全的自由了，\n\
-船头成为埋葬它们的铁铲；\n\
-我在波浪中有节奏地跳跃’\n\
-就像荡着一个巨大的秋千。\n\
-\n\
-即使它们终于把我撕碎，\n\
-变成一些残破的木片：\n\
-我不会沉沦，决不！\n\
-我还会在浪尖上飞旋。\n\
-\n\
-后来者还会在残片上认出我，\n\
-未来的诗人会喟然长叹：\n\
-“这里有一个幸福的灵魂，\n\
-它曾经是一艘前进着的航船!";
+";
         
         showLab = [[UILabel alloc] initWithFrame:CGRectMake(10, 20, ScreenW-20, ScreenH-40)];
-        showLab.textColor = [UIColor colorWithRed:49/255.f green:189/255.f blue:249/255.f alpha:1];
-        showLab.font = [UIFont systemFontOfSize:10];
+        showLab.textColor = KBlueMilk;
+        showLab.font = [UIFont systemFontOfSize:12];
         showLab.textAlignment = NSTextAlignmentCenter;
         showLab.numberOfLines = 0;
         [self.view addSubview:showLab];
@@ -176,18 +244,27 @@ typedef void(^animBlock)(void);
         showLab.hidden = NO;
     }
     
+    if (!showLabComplete) {
+        NSLog(@"别着急，文字还没刷完呢 刷完再重播");
+        return;
+    }
     dispatch_async(dispatch_get_global_queue(0, 0), ^{
+        showLabComplete = NO;
         for (short i =0; i<content.length; i++) {
             dispatch_sync(dispatch_get_main_queue(), ^{
                 showLab.text = [content substringToIndex:i+1];
-                [NSThread sleepForTimeInterval:0.05];
+                //[NSThread sleepForTimeInterval:0.05];
             });
+            if (i == content.length-1) {
+                showLabComplete = YES;
+                NSLog(@"complete");
+            }
         }
     });
 }
 
 
-//基于异步文字思想的连播动画
+// 3.基于异步文字思想的连播动画
 - (void)asyncPlayFlash{
     if (cube.hidden) {
         NSLog(@"cube is hidden");
@@ -222,44 +299,6 @@ typedef void(^animBlock)(void);
     } completion:^(BOOL finished) {}];
 }
 
-
-// play anim
-- (void)playFlash{
-    if (cube.hidden) {
-        NSLog(@"cube is hidden");
-        return;
-    }
-    [self animateSyncDuration:dur animations:^{
-        [self changeWidth:ScreenW-40];
-    }];
-    
-    [self animateSyncDuration:dur animations:^{
-        [self changeHeight:260];
-    }];
-    
-    [self animateSyncDuration:dur animations:^{
-        [self changeCenter:CGPointMake(ScreenW/2.f, 2*ScreenH/5.f)];
-    }];
-}
-
-
-// Packge A Method By The Block For Serial Animations
-- (void)animateSyncDuration:(NSTimeInterval)duration animations:(dispatch_block_t)animations {
-    dispatch_async(myQueue, ^{
-        
-        dispatch_group_enter(myGroup);
-        
-        dispatch_async(dispatch_get_main_queue(), ^{
-            // 带弹簧
-            [UIView animateWithDuration:duration delay:0 usingSpringWithDamping:0.8 initialSpringVelocity:1 options:UIViewAnimationOptionCurveEaseInOut animations:animations completion:^(BOOL finished) {
-                dispatch_group_leave(myGroup);
-            }];
-        });
-        
-        dispatch_group_wait(myGroup, DISPATCH_TIME_FOREVER);
-    });
-    
-}
 
 
 /**
