@@ -4,7 +4,7 @@
 //
 //  Created by 张祥龙 on 16/8/26.
 //  Blog：http://blog.csdn.net/u012241552
-//  Copyright © 2016年 张雷. All rights reserved.
+//  QQ: 494058733
 //
 
 typedef void(^animBlock)(void);
